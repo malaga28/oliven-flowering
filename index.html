@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Olivenblüte Andalusien</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="controls">
+    <label for="periodSlider">Zeitraum:</label>
+    <input type="range" id="periodSlider" min="0" max="4" step="1" value="0" />
+    <span id="periodLabel">1951-1980</span>
+
+    <label for="scenarioSelect">Szenario:</label>
+    <select id="scenarioSelect">
+      <option value="ssp245">SSP245</option>
+      <option value="ssp585">SSP585</option>
+    </select>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="legend">
+    <h4>Beginn der Olivenblüte (DOY)</h4>
+    <div><span class="box doy1"></span> &lt; 90</div>
+    <div><span class="box doy2"></span> 90–99</div>
+    <div><span class="box doy3"></span> 100–109</div>
+    <div><span class="box doy4"></span> 110–119</div>
+    <div><span class="box doy5"></span> 120–129</div>
+    <div><span class="box doy6"></span> 130–139</div>
+    <div><span class="box doy7"></span> 140–149</div>
+    <div><span class="box doy8"></span> 150–159</div>
+    <div><span class="box doy9"></span> ≥ 160</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/geotiff/dist-browser/geotiff.js"></script>
+  <script src="https://unpkg.com/georaster/dist/georaster.browserify.min.js"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet/dist/georaster-layer-for-leaflet.min.js"></script>
+  <script src="config/layers.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
