@@ -32,12 +32,25 @@ body {
   width: 220px;
 }
 
-#controls select {
+#controls select,
+#toggleOlivesBtn {
   padding: 6px 10px;
   font-size: 14px;
   border: 1px solid #bbb;
   border-radius: 6px;
   background: white;
+}
+
+#toggleOlivesBtn {
+  cursor: pointer;
+  font-weight: 600;
+  color: #2f4f2f;
+}
+
+#toggleOlivesBtn.active {
+  background: #2f6b36;
+  color: white;
+  border-color: #2f6b36;
 }
 
 #periodLabel {
@@ -96,6 +109,21 @@ body {
 .doy8 { background: #66bd63; }
 .doy9 { background: #1a9850; }
 
+.pixelated-overlay {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.olives-overlay {
+  mix-blend-mode: multiply;
+}
+
+.leaflet-tooltip {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
 @media (max-width: 700px) {
   #controls {
     flex-direction: column;
@@ -118,15 +146,4 @@ body {
     width: 16px;
     height: 16px;
   }
-}
-
-.pixelated-overlay {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-
-.leaflet-tooltip {
-  font-size: 13px;
-  font-weight: 600;
-  padding: 4px 8px;
 }
