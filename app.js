@@ -21,10 +21,15 @@ const periods = [
 const periodSlider = document.getElementById("periodSlider");
 const periodLabel = document.getElementById("periodLabel");
 const scenarioSelect = document.getElementById("scenarioSelect");
+const toggleOlivesBtn = document.getElementById("toggleOlivesBtn");
 
 let currentOverlay = null;
 let currentGeoraster = null;
 let activeRequestId = 0;
+
+let olivesVisible = false;
+let oliveOverlay = null;
+let oliveRasterPromise = null;
 
 const hoverTooltip = L.tooltip({
   permanent: false,
@@ -33,15 +38,23 @@ const hoverTooltip = L.tooltip({
   opacity: 0.95
 });
 
+function getCurrentPeriod() {
+  return periods[Number(periodSlider.value)];
+}
+
+function isHistoricalPeriod(period) {
+  return period === "1951-1980" || period === "1981-2014";
+}
+
 function getRasterUrl() {
-  const period = periods[Number(periodSlider.value)];
+  const period = getCurrentPeriod();
   const scenario = scenarioSelect.value;
 
-  if (period === "1951-1980" || period === "1981-2014") {
-    return layersConfig.historical[period] || null;
+  if (isHistoricalPeriod(period)) {
+    return layersConfig.floweringRasters.historical[period] || null;
   }
 
-  return layersConfig.future[scenario]?.[period] || null;
+  return layersConfig.floweringRasters.future[scenario]?.[period] || null;
 }
 
 function floweringDoyToColor(doy) {
@@ -122,6 +135,54 @@ function rasterToDataUrl(georaster) {
           data[p + 2] = color.b;
           data[p + 3] = 255;
         }
+      }
+
+      p += 4;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function oliveRasterToDataUrl(georaster) {
+  const width = georaster.width;
+  const height = georaster.height;
+  const band = georaster.values[0];
+  const noDataValue = georaster.noDataValue;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  const imageData = ctx.createImageData(width, height);
+  const data = imageData.data;
+
+  let p = 0;
+
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const value = band[row][col];
+
+      const isNoData =
+        value === null ||
+        value === undefined ||
+        isNaN(value) ||
+        value === noDataValue;
+
+      const hasOlives = !isNoData && Number(value) > 0;
+
+      if (!hasOlives) {
+        data[p] = 0;
+        data[p + 1] = 0;
+        data[p + 2] = 0;
+        data[p + 3] = 0;
+      } else {
+        data[p] = 36;
+        data[p + 1] = 110;
+        data[p + 2] = 54;
+        data[p + 3] = 150;
       }
 
       p += 4;
@@ -224,17 +285,82 @@ async function loadRaster(url, requestId) {
     currentOverlay = overlay;
     currentOverlay.addTo(map);
 
+    if (olivesVisible) {
+      await ensureOliveOverlay();
+    }
+
   } catch (error) {
     console.error("Fehler beim Laden des Rasters:", error);
   }
 }
 
+async function fetchOliveGeoraster() {
+  if (!oliveRasterPromise) {
+    oliveRasterPromise = (async () => {
+      const response = await fetch(`${layersConfig.oliveRaster}?v=1`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Olivenraster konnte nicht geladen werden: ${layersConfig.oliveRaster} (${response.status})`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return parseGeoraster(arrayBuffer);
+    })();
+  }
+  return oliveRasterPromise;
+}
+
+async function ensureOliveOverlay() {
+  if (oliveOverlay) {
+    if (!map.hasLayer(oliveOverlay)) {
+      oliveOverlay.addTo(map);
+    }
+    return;
+  }
+
+  try {
+    const georaster = await fetchOliveGeoraster();
+    const imageUrl = oliveRasterToDataUrl(georaster);
+
+    const bounds = [
+      [georaster.ymin, georaster.xmin],
+      [georaster.ymax, georaster.xmax]
+    ];
+
+    oliveOverlay = L.imageOverlay(imageUrl, bounds, {
+      opacity: 0.75,
+      interactive: false,
+      className: "pixelated-overlay olives-overlay"
+    });
+
+    if (olivesVisible) {
+      oliveOverlay.addTo(map);
+    }
+  } catch (error) {
+    console.error("Fehler beim Laden des Olivenrasters:", error);
+  }
+}
+
+function setOliveButtonState() {
+  toggleOlivesBtn.classList.toggle("active", olivesVisible);
+  toggleOlivesBtn.textContent = olivesVisible ? "Olivenflächen: an" : "Olivenflächen: aus";
+}
+
+async function toggleOliveOverlay() {
+  olivesVisible = !olivesVisible;
+  setOliveButtonState();
+
+  if (olivesVisible) {
+    await ensureOliveOverlay();
+  } else if (oliveOverlay && map.hasLayer(oliveOverlay)) {
+    map.removeLayer(oliveOverlay);
+  }
+}
+
 async function updateMap() {
-  const period = periods[Number(periodSlider.value)];
+  const period = getCurrentPeriod();
   periodLabel.textContent = period;
 
-  const isHistorical = period === "1951-1980" || period === "1981-2014";
-  scenarioSelect.disabled = isHistorical;
+  const historical = isHistoricalPeriod(period);
+  scenarioSelect.disabled = historical;
 
   const url = getRasterUrl();
 
@@ -270,5 +396,7 @@ map.on("mouseout", () => {
 
 periodSlider.addEventListener("input", updateMap);
 scenarioSelect.addEventListener("change", updateMap);
+toggleOlivesBtn.addEventListener("click", toggleOliveOverlay);
 
+setOliveButtonState();
 updateMap();
