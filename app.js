@@ -18,10 +18,25 @@ const periods = [
   "2071-2100"
 ];
 
+const floweringClasses = [
+  { label: "< 90", min: -Infinity, max: 89, color: "#8b0000" },
+  { label: "90–99", min: 90, max: 99, color: "#d73027" },
+  { label: "100–109", min: 100, max: 109, color: "#f46d43" },
+  { label: "110–119", min: 110, max: 119, color: "#fdae61" },
+  { label: "120–129", min: 120, max: 129, color: "#fee08b" },
+  { label: "130–139", min: 130, max: 139, color: "#d9ef8b" },
+  { label: "140–149", min: 140, max: 149, color: "#a6d96a" },
+  { label: "150–159", min: 150, max: 159, color: "#66bd63" },
+  { label: "≥ 160", min: 160, max: Infinity, color: "#1a9850" }
+];
+
 const periodSlider = document.getElementById("periodSlider");
 const periodLabel = document.getElementById("periodLabel");
 const scenarioSelect = document.getElementById("scenarioSelect");
 const toggleOlivesBtn = document.getElementById("toggleOlivesBtn");
+const chartCanvas = document.getElementById("chartCanvas");
+const chartTitle = document.getElementById("chartTitle");
+const chartStatus = document.getElementById("chartStatus");
 
 let currentOverlay = null;
 let currentGeoraster = null;
@@ -30,6 +45,8 @@ let activeRequestId = 0;
 let olivesVisible = false;
 let oliveOverlay = null;
 let oliveRasterPromise = null;
+
+let floweringChart = null;
 
 const hoverTooltip = L.tooltip({
   permanent: false,
@@ -55,6 +72,17 @@ function getRasterUrl() {
   }
 
   return layersConfig.floweringRasters.future[scenario]?.[period] || null;
+}
+
+function getChartCsvUrl() {
+  const period = getCurrentPeriod();
+  const scenario = scenarioSelect.value;
+
+  if (isHistoricalPeriod(period)) {
+    return layersConfig.chartCSVs.historical[period] || null;
+  }
+
+  return layersConfig.chartCSVs.future[scenario]?.[period] || null;
 }
 
 function floweringDoyToColor(doy) {
@@ -355,6 +383,197 @@ async function toggleOliveOverlay() {
   }
 }
 
+function detectDelimiter(line) {
+  return line.includes(";") ? ";" : ",";
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined) return NaN;
+  const cleaned = String(value).trim().replace("%", "").replace(",", ".");
+  return Number(cleaned);
+}
+
+function normalizeCsvRows(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  if (!lines.length) return [];
+
+  const delimiter = detectDelimiter(lines[0]);
+  const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim()));
+
+  const firstRow = rows[0];
+  const hasHeader = firstRow.some(cell => /[a-zA-ZäöüÄÖÜ]/.test(cell));
+
+  if (!hasHeader) {
+    return rows.map(cols => ({
+      value: parseNumber(cols[0]),
+      percent: parseNumber(cols[2] ?? cols[1])
+    }));
+  }
+
+  const headers = firstRow.map(h => h.toLowerCase());
+
+  const valueIndex = headers.findIndex(h =>
+    h.includes("score_value") ||
+    h.includes("score") ||
+    h.includes("value") ||
+    h.includes("doy") ||
+    h.includes("day")
+  );
+
+  const percentIndex = headers.findIndex(h =>
+    h.includes("share_percent") ||
+    h.includes("percent") ||
+    h.includes("percentage") ||
+    h.includes("prozent") ||
+    h.includes("anteil") ||
+    h.includes("share") ||
+    h.includes("%")
+  );
+
+  return rows.slice(1).map(cols => ({
+    value: parseNumber(cols[valueIndex >= 0 ? valueIndex : 0]),
+    percent: parseNumber(cols[percentIndex >= 0 ? percentIndex : 2])
+  }));
+}
+
+function getFloweringClassIndex(doy) {
+  if (!Number.isFinite(doy)) return -1;
+
+  for (let i = 0; i < floweringClasses.length; i++) {
+    const cls = floweringClasses[i];
+    if (doy >= cls.min && doy <= cls.max) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+function toChartArray(rows) {
+  const arr = Array.from({ length: floweringClasses.length }, () => 0);
+
+  rows.forEach(row => {
+    const doy = Math.round(row.value);
+    const percent = row.percent;
+    const classIndex = getFloweringClassIndex(doy);
+
+    if (classIndex >= 0 && Number.isFinite(percent)) {
+      arr[classIndex] += percent;
+    }
+  });
+
+  return arr;
+}
+
+function destroyChart() {
+  if (floweringChart) {
+    floweringChart.destroy();
+    floweringChart = null;
+  }
+}
+
+function renderChart(percentages, period, scenario) {
+  destroyChart();
+
+  const labels = floweringClasses.map(item => item.label);
+  const barColors = floweringClasses.map(item => item.color);
+
+  floweringChart = new Chart(chartCanvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Olivenflächen [%]",
+        data: percentages,
+        backgroundColor: barColors,
+        borderColor: barColors,
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const value = context.raw ?? 0;
+              return `${context.label}: ${Number(value).toFixed(1)} %`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: "Blühbeginn (DOY-Klasse)"
+          },
+          grid: {
+            display: false
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Olivenflächen [%]"
+          },
+          ticks: {
+            callback: function(value) {
+              return value + " %";
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const scenarioText = isHistoricalPeriod(period) ? "" : `, ${scenario.toUpperCase()}`;
+  chartTitle.textContent = `Beginn der Olivenblüte (${period}${scenarioText}) auf Olivenflächen (Stand 2000)`;
+  chartStatus.textContent = "";
+}
+
+async function updateChart() {
+  const period = getCurrentPeriod();
+  const scenario = scenarioSelect.value;
+  const csvUrl = getChartCsvUrl();
+
+  chartTitle.textContent = "Verteilung der Olivenflächen";
+  chartStatus.textContent = "Lade Diagramm ...";
+
+  destroyChart();
+
+  if (!csvUrl) {
+    chartStatus.textContent = "Keine CSV gefunden.";
+    return;
+  }
+
+  try {
+    const response = await fetch(`${csvUrl}?v=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`CSV konnte nicht geladen werden: ${csvUrl} (${response.status})`);
+    }
+
+    const text = await response.text();
+    const rows = normalizeCsvRows(text);
+    const percentages = toChartArray(rows);
+
+    renderChart(percentages, period, scenario);
+  } catch (error) {
+    console.error("Fehler beim Laden des Diagramms:", error);
+    chartStatus.textContent = "Diagramm konnte nicht geladen werden.";
+  }
+}
+
 async function updateMap() {
   const period = getCurrentPeriod();
   periodLabel.textContent = period;
@@ -373,7 +592,10 @@ async function updateMap() {
   console.log("URL:", url);
   console.log("Neue requestId:", requestId);
 
-  await loadRaster(url, requestId);
+  await Promise.all([
+    loadRaster(url, requestId),
+    updateChart()
+  ]);
 }
 
 map.on("mousemove", (e) => {
