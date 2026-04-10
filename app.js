@@ -18,6 +18,18 @@ const periods = [
   "2071-2100"
 ];
 
+const floweringClasses = [
+  { label: "< 90", min: -Infinity, max: 89, color: "#8b0000" },
+  { label: "90–99", min: 90, max: 99, color: "#d73027" },
+  { label: "100–109", min: 100, max: 109, color: "#f46d43" },
+  { label: "110–119", min: 110, max: 119, color: "#fdae61" },
+  { label: "120–129", min: 120, max: 129, color: "#fee08b" },
+  { label: "130–139", min: 130, max: 139, color: "#d9ef8b" },
+  { label: "140–149", min: 140, max: 149, color: "#a6d96a" },
+  { label: "150–159", min: 150, max: 159, color: "#66bd63" },
+  { label: "≥ 160", min: 160, max: Infinity, color: "#1a9850" }
+];
+
 const periodSlider = document.getElementById("periodSlider");
 const periodLabel = document.getElementById("periodLabel");
 const scenarioSelect = document.getElementById("scenarioSelect");
@@ -34,7 +46,7 @@ let olivesVisible = false;
 let oliveOverlay = null;
 let oliveRasterPromise = null;
 
-let scoreChart = null;
+let floweringChart = null;
 
 const hoverTooltip = L.tooltip({
   permanent: false,
@@ -56,10 +68,10 @@ function getRasterUrl() {
   const scenario = scenarioSelect.value;
 
   if (isHistoricalPeriod(period)) {
-    return layersConfig.scoreRasters.historical[period] || null;
+    return layersConfig.floweringRasters.historical[period] || null;
   }
 
-  return layersConfig.scoreRasters.future[scenario]?.[period] || null;
+  return layersConfig.floweringRasters.future[scenario]?.[period] || null;
 }
 
 function getChartCsvUrl() {
@@ -73,21 +85,18 @@ function getChartCsvUrl() {
   return layersConfig.chartCSVs.future[scenario]?.[period] || null;
 }
 
-function scoreToColor(score) {
-  const colors = {
-    0: "#8b0000",
-    1: "#b22222",
-    2: "#d95f0e",
-    3: "#f16913",
-    4: "#fdae6b",
-    5: "#fee08b",
-    6: "#d9ef8b",
-    7: "#a6d96a",
-    8: "#66bd63",
-    9: "#1a9850",
-    10: "#006837"
-  };
-  return colors[score] ?? null;
+function floweringDoyToColor(doy) {
+  if (doy === null || doy === undefined || isNaN(doy)) return null;
+
+  if (doy < 90) return "#8b0000";
+  if (doy < 100) return "#d73027";
+  if (doy < 110) return "#f46d43";
+  if (doy < 120) return "#fdae61";
+  if (doy < 130) return "#fee08b";
+  if (doy < 140) return "#d9ef8b";
+  if (doy < 150) return "#a6d96a";
+  if (doy < 160) return "#66bd63";
+  return "#1a9850";
 }
 
 function hexToRgb(hex) {
@@ -140,8 +149,8 @@ function rasterToDataUrl(georaster) {
         data[p + 2] = 0;
         data[p + 3] = 0;
       } else {
-        const score = Math.round(value);
-        const color = hexToRgb(scoreToColor(score));
+        const doy = Math.round(value);
+        const color = hexToRgb(floweringDoyToColor(doy));
 
         if (!color) {
           data[p] = 0;
@@ -290,7 +299,7 @@ async function loadRaster(url, requestId) {
     ];
 
     const overlay = L.imageOverlay(imageUrl, bounds, {
-      opacity: 0.55,
+      opacity: 0.6,
       interactive: false,
       className: "pixelated-overlay"
     });
@@ -411,10 +420,9 @@ function normalizeCsvRows(text) {
   const valueIndex = headers.findIndex(h =>
     h.includes("score_value") ||
     h.includes("score") ||
-    h.includes("klasse") ||
-    h.includes("class") ||
     h.includes("value") ||
-    h.includes("skala")
+    h.includes("doy") ||
+    h.includes("day")
   );
 
   const pixelCountIndex = headers.findIndex(h =>
@@ -441,20 +449,29 @@ function normalizeCsvRows(text) {
   }));
 }
 
+function getFloweringClassIndex(doy) {
+  if (!Number.isFinite(doy)) return -1;
+
+  for (let i = 0; i < floweringClasses.length; i++) {
+    const cls = floweringClasses[i];
+    if (doy >= cls.min && doy <= cls.max) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 function toChartArray(rows) {
-  const arr = Array.from({ length: 11 }, () => 0);
+  const arr = Array.from({ length: floweringClasses.length }, () => 0);
 
   rows.forEach(row => {
-    const score = Math.round(row.value);
+    const doy = Math.round(row.value);
     const percent = row.percent;
+    const classIndex = getFloweringClassIndex(doy);
 
-    if (
-      Number.isFinite(score) &&
-      Number.isFinite(percent) &&
-      score >= 0 &&
-      score <= 10
-    ) {
-      arr[score] = percent;
+    if (classIndex >= 0 && Number.isFinite(percent)) {
+      arr[classIndex] += percent;
     }
   });
 
@@ -504,19 +521,19 @@ function calculateWeightedStats(rows) {
 }
 
 function destroyChart() {
-  if (scoreChart) {
-    scoreChart.destroy();
-    scoreChart = null;
+  if (floweringChart) {
+    floweringChart.destroy();
+    floweringChart = null;
   }
 }
 
 function renderChart(percentages, stats, period, scenario) {
   destroyChart();
 
-  const labels = Array.from({ length: 11 }, (_, i) => String(i));
-  const barColors = labels.map(label => scoreToColor(Number(label)));
+  const labels = floweringClasses.map(item => item.label);
+  const barColors = floweringClasses.map(item => item.color);
 
-  scoreChart = new Chart(chartCanvas, {
+  floweringChart = new Chart(chartCanvas, {
     type: "bar",
     data: {
       labels,
@@ -549,7 +566,7 @@ function renderChart(percentages, stats, period, scenario) {
         x: {
           title: {
             display: true,
-            text: "Olivenanbau-Score"
+            text: "Blühbeginn (DOY-Klasse)"
           },
           grid: {
             display: false
@@ -557,7 +574,7 @@ function renderChart(percentages, stats, period, scenario) {
         },
         y: {
           beginAtZero: true,
-          max: 60,
+          max: 40,
           title: {
             display: true,
             text: "Olivenflächen [%]"
@@ -578,7 +595,7 @@ function renderChart(percentages, stats, period, scenario) {
     Number.isFinite(stats.median) ? `Median = ${stats.median.toFixed(1)}` : null
   ].filter(Boolean).join(" | ");
 
-  chartTitle.textContent = `Klimatische Anbaueignung (${period}${scenarioText}) der Olivenflächen (Stand 2000)`;
+  chartTitle.textContent = `Beginn der Olivenblüte (${period}${scenarioText}) auf Olivenflächen (Stand 2000)`;
   chartStatus.textContent = statsText;
 }
 
@@ -640,16 +657,16 @@ async function updateMap() {
 }
 
 map.on("mousemove", (e) => {
-  const score = getRasterValueAtLatLng(e.latlng);
+  const doy = getRasterValueAtLatLng(e.latlng);
 
-  if (score === null) {
+  if (doy === null) {
     map.closeTooltip(hoverTooltip);
     return;
   }
 
   hoverTooltip
     .setLatLng(e.latlng)
-    .setContent(`Anbau-Score: <b>${score}</b>`)
+    .setContent(`Blühbeginn: <b>DOY ${doy}</b>`)
     .addTo(map);
 });
 
