@@ -521,8 +521,9 @@ function renderChart(percentages, period, scenario) {
             display: false
           }
         },
-        y: {
+       y: {
   beginAtZero: true,
+  max: 40,
   title: {
     display: true,
     text: "Olivenflächen [%]"
