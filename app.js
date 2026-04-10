@@ -522,17 +522,17 @@ function renderChart(percentages, period, scenario) {
           }
         },
         y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: "Olivenflächen [%]"
-          },
-          ticks: {
-            callback: function(value) {
-              return value + " %";
-            }
-          }
-        }
+  beginAtZero: true,
+  title: {
+    display: true,
+    text: "Olivenflächen [%]"
+  },
+  ticks: {
+    callback: function(value) {
+      return value + " %";
+    }
+  }
+}
       }
     }
   });
