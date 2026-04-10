@@ -55,64 +55,6 @@ const hoverTooltip = L.tooltip({
   opacity: 0.95
 });
 
-const statsLinePlugin = {
-  id: "statsLinePlugin",
-  afterDatasetsDraw(chart, args, pluginOptions) {
-    const { ctx, chartArea, scales } = chart;
-    const xScale = scales.x;
-    const yScale = scales.y;
-
-    if (!chartArea || !xScale || !yScale) return;
-
-    const meanValue = pluginOptions?.meanValue;
-    const medianValue = pluginOptions?.medianValue;
-
-    function getClassCenterIndex(value) {
-      for (let i = 0; i < floweringClasses.length; i++) {
-        const cls = floweringClasses[i];
-        if (value >= cls.min && value <= cls.max) {
-          return i;
-        }
-      }
-      return null;
-    }
-
-    function drawVerticalMarker(value, color, label) {
-      if (!Number.isFinite(value)) return;
-
-      const classIndex = getClassCenterIndex(value);
-      if (classIndex === null) return;
-
-      const x = xScale.getPixelForValue(classIndex);
-      const topY = chartArea.top;
-      const bottomY = chartArea.bottom;
-
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-
-      ctx.beginPath();
-      ctx.moveTo(x, topY);
-      ctx.lineTo(x, bottomY);
-      ctx.stroke();
-
-      ctx.setLineDash([]);
-      ctx.fillStyle = color;
-      ctx.font = "12px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText(label, x, topY + 4);
-      ctx.restore();
-    }
-
-    drawVerticalMarker(meanValue, "#1f4e79", `Ø ${meanValue.toFixed(1)}`);
-    drawVerticalMarker(medianValue, "#7a1f5c", `Median ${medianValue.toFixed(1)}`);
-  }
-};
-
-Chart.register(statsLinePlugin);
-
 function getCurrentPeriod() {
   return periods[Number(periodSlider.value)];
 }
@@ -616,22 +558,8 @@ function renderChart(percentages, stats, period, scenario) {
             label: function(context) {
               const value = context.raw ?? 0;
               return `${context.label}: ${Number(value).toFixed(1)} %`;
-            },
-            afterBody: function() {
-              const lines = [];
-              if (Number.isFinite(stats.mean)) {
-                lines.push(`Ø Blühbeginn: DOY ${stats.mean.toFixed(1)}`);
-              }
-              if (Number.isFinite(stats.median)) {
-                lines.push(`Median Blühbeginn: DOY ${stats.median.toFixed(1)}`);
-              }
-              return lines;
             }
           }
-        },
-        statsLinePlugin: {
-          meanValue: stats.mean,
-          medianValue: stats.median
         }
       },
       scales: {
@@ -663,8 +591,8 @@ function renderChart(percentages, stats, period, scenario) {
 
   const scenarioText = isHistoricalPeriod(period) ? "" : `, ${scenario.toUpperCase()}`;
   const statsText = [
-    Number.isFinite(stats.mean) ? `Ø DOY ${stats.mean.toFixed(1)}` : null,
-    Number.isFinite(stats.median) ? `Median DOY ${stats.median.toFixed(1)}` : null
+    Number.isFinite(stats.mean) ? `Mittelwert = ${stats.mean.toFixed(1)}` : null,
+    Number.isFinite(stats.median) ? `Median = ${stats.median.toFixed(1)}` : null
   ].filter(Boolean).join(" | ");
 
   chartTitle.textContent = `Beginn der Olivenblüte (${period}${scenarioText}) auf Olivenflächen (Stand 2000)`;
