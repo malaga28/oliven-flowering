@@ -55,6 +55,64 @@ const hoverTooltip = L.tooltip({
   opacity: 0.95
 });
 
+const statsLinePlugin = {
+  id: "statsLinePlugin",
+  afterDatasetsDraw(chart, args, pluginOptions) {
+    const { ctx, chartArea, scales } = chart;
+    const xScale = scales.x;
+    const yScale = scales.y;
+
+    if (!chartArea || !xScale || !yScale) return;
+
+    const meanValue = pluginOptions?.meanValue;
+    const medianValue = pluginOptions?.medianValue;
+
+    function getClassCenterIndex(value) {
+      for (let i = 0; i < floweringClasses.length; i++) {
+        const cls = floweringClasses[i];
+        if (value >= cls.min && value <= cls.max) {
+          return i;
+        }
+      }
+      return null;
+    }
+
+    function drawVerticalMarker(value, color, label) {
+      if (!Number.isFinite(value)) return;
+
+      const classIndex = getClassCenterIndex(value);
+      if (classIndex === null) return;
+
+      const x = xScale.getPixelForValue(classIndex);
+      const topY = chartArea.top;
+      const bottomY = chartArea.bottom;
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+
+      ctx.beginPath();
+      ctx.moveTo(x, topY);
+      ctx.lineTo(x, bottomY);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.font = "12px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(label, x, topY + 4);
+      ctx.restore();
+    }
+
+    drawVerticalMarker(meanValue, "#1f4e79", `Ø ${meanValue.toFixed(1)}`);
+    drawVerticalMarker(medianValue, "#7a1f5c", `Median ${medianValue.toFixed(1)}`);
+  }
+};
+
+Chart.register(statsLinePlugin);
+
 function getCurrentPeriod() {
   return periods[Number(periodSlider.value)];
 }
@@ -410,6 +468,7 @@ function normalizeCsvRows(text) {
   if (!hasHeader) {
     return rows.map(cols => ({
       value: parseNumber(cols[0]),
+      pixelCount: parseNumber(cols[1]),
       percent: parseNumber(cols[2] ?? cols[1])
     }));
   }
@@ -424,6 +483,13 @@ function normalizeCsvRows(text) {
     h.includes("day")
   );
 
+  const pixelCountIndex = headers.findIndex(h =>
+    h.includes("pixel_count") ||
+    h.includes("pixelcount") ||
+    h.includes("count") ||
+    h.includes("pixels")
+  );
+
   const percentIndex = headers.findIndex(h =>
     h.includes("share_percent") ||
     h.includes("percent") ||
@@ -436,6 +502,7 @@ function normalizeCsvRows(text) {
 
   return rows.slice(1).map(cols => ({
     value: parseNumber(cols[valueIndex >= 0 ? valueIndex : 0]),
+    pixelCount: parseNumber(cols[pixelCountIndex >= 0 ? pixelCountIndex : 1]),
     percent: parseNumber(cols[percentIndex >= 0 ? percentIndex : 2])
   }));
 }
@@ -469,6 +536,48 @@ function toChartArray(rows) {
   return arr;
 }
 
+function calculateWeightedStats(rows) {
+  const validRows = rows
+    .map(row => ({
+      value: Number(row.value),
+      weight: Number(row.pixelCount)
+    }))
+    .filter(row =>
+      Number.isFinite(row.value) &&
+      Number.isFinite(row.weight) &&
+      row.weight > 0
+    )
+    .sort((a, b) => a.value - b.value);
+
+  if (!validRows.length) {
+    return {
+      mean: null,
+      median: null
+    };
+  }
+
+  const totalWeight = validRows.reduce((sum, row) => sum + row.weight, 0);
+
+  const weightedSum = validRows.reduce((sum, row) => {
+    return sum + row.value * row.weight;
+  }, 0);
+
+  const mean = weightedSum / totalWeight;
+
+  let cumulativeWeight = 0;
+  let median = validRows[validRows.length - 1].value;
+
+  for (const row of validRows) {
+    cumulativeWeight += row.weight;
+    if (cumulativeWeight >= totalWeight / 2) {
+      median = row.value;
+      break;
+    }
+  }
+
+  return { mean, median };
+}
+
 function destroyChart() {
   if (floweringChart) {
     floweringChart.destroy();
@@ -476,7 +585,7 @@ function destroyChart() {
   }
 }
 
-function renderChart(percentages, period, scenario) {
+function renderChart(percentages, stats, period, scenario) {
   destroyChart();
 
   const labels = floweringClasses.map(item => item.label);
@@ -507,8 +616,22 @@ function renderChart(percentages, period, scenario) {
             label: function(context) {
               const value = context.raw ?? 0;
               return `${context.label}: ${Number(value).toFixed(1)} %`;
+            },
+            afterBody: function() {
+              const lines = [];
+              if (Number.isFinite(stats.mean)) {
+                lines.push(`Ø Blühbeginn: DOY ${stats.mean.toFixed(1)}`);
+              }
+              if (Number.isFinite(stats.median)) {
+                lines.push(`Median Blühbeginn: DOY ${stats.median.toFixed(1)}`);
+              }
+              return lines;
             }
           }
+        },
+        statsLinePlugin: {
+          meanValue: stats.mean,
+          medianValue: stats.median
         }
       },
       scales: {
@@ -521,26 +644,31 @@ function renderChart(percentages, period, scenario) {
             display: false
           }
         },
-       y: {
-  beginAtZero: true,
-  max: 40,
-  title: {
-    display: true,
-    text: "Olivenflächen [%]"
-  },
-  ticks: {
-    callback: function(value) {
-      return value + " %";
-    }
-  }
-}
+        y: {
+          beginAtZero: true,
+          max: 40,
+          title: {
+            display: true,
+            text: "Olivenflächen [%]"
+          },
+          ticks: {
+            callback: function(value) {
+              return value + " %";
+            }
+          }
+        }
       }
     }
   });
 
   const scenarioText = isHistoricalPeriod(period) ? "" : `, ${scenario.toUpperCase()}`;
+  const statsText = [
+    Number.isFinite(stats.mean) ? `Ø DOY ${stats.mean.toFixed(1)}` : null,
+    Number.isFinite(stats.median) ? `Median DOY ${stats.median.toFixed(1)}` : null
+  ].filter(Boolean).join(" | ");
+
   chartTitle.textContent = `Beginn der Olivenblüte (${period}${scenarioText}) auf Olivenflächen (Stand 2000)`;
-  chartStatus.textContent = "";
+  chartStatus.textContent = statsText;
 }
 
 async function updateChart() {
@@ -567,8 +695,9 @@ async function updateChart() {
     const text = await response.text();
     const rows = normalizeCsvRows(text);
     const percentages = toChartArray(rows);
+    const stats = calculateWeightedStats(rows);
 
-    renderChart(percentages, period, scenario);
+    renderChart(percentages, stats, period, scenario);
   } catch (error) {
     console.error("Fehler beim Laden des Diagramms:", error);
     chartStatus.textContent = "Diagramm konnte nicht geladen werden.";
