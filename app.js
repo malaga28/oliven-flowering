@@ -42,7 +42,7 @@ let currentOverlay = null;
 let currentGeoraster = null;
 let activeRequestId = 0;
 
-let olivesVisible = false;
+let olivesVisible = true;
 let oliveOverlay = null;
 let oliveRasterPromise = null;
 
