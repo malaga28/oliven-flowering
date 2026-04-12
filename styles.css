@@ -65,10 +65,8 @@ body {
   min-height: 500px;
 }
 
-#legend {
+.map-legend {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
   background: rgba(255, 255, 255, 0.96);
   padding: 12px 14px;
   border-radius: 10px;
@@ -78,16 +76,27 @@ body {
   z-index: 1000;
 }
 
-#legend h4 {
+.map-legend h4 {
   margin: 0 0 8px 0;
   font-size: 15px;
   color: #222;
 }
 
-#legend div {
+.map-legend div {
   display: flex;
   align-items: center;
   margin-bottom: 4px;
+}
+
+#oliveLegend {
+  bottom: 20px;
+  right: 220px;
+}
+
+#legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
 }
 
 #chartPanel {
@@ -137,6 +146,10 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
+.oliveBox {
+  background: rgba(36, 110, 54, 0.6);
+}
+
 .doy1 { background: #8b0000; }
 .doy2 { background: #d73027; }
 .doy3 { background: #f46d43; }
@@ -162,6 +175,10 @@ body {
   padding: 4px 8px;
 }
 
+.hidden {
+  display: none;
+}
+
 @media (max-width: 900px) {
   #chartPanel {
     width: 340px;
@@ -177,6 +194,11 @@ body {
   #legend {
     right: 10px;
     bottom: 10px;
+  }
+
+  #oliveLegend {
+    bottom: 10px;
+    right: 210px;
   }
 }
 
@@ -196,6 +218,11 @@ body {
     bottom: 10px;
     font-size: 13px;
     padding: 10px 12px;
+  }
+
+  #oliveLegend {
+    bottom: 10px;
+    right: 210px;
   }
 
   #chartPanel {
