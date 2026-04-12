@@ -37,6 +37,7 @@ const toggleOlivesBtn = document.getElementById("toggleOlivesBtn");
 const chartCanvas = document.getElementById("chartCanvas");
 const chartTitle = document.getElementById("chartTitle");
 const chartStatus = document.getElementById("chartStatus");
+const oliveLegend = document.getElementById("oliveLegend");
 
 let currentOverlay = null;
 let currentGeoraster = null;
@@ -370,6 +371,10 @@ async function ensureOliveOverlay() {
 function setOliveButtonState() {
   toggleOlivesBtn.classList.toggle("active", olivesVisible);
   toggleOlivesBtn.textContent = olivesVisible ? "Olivenflächen: an" : "Olivenflächen: aus";
+
+  if (oliveLegend) {
+    oliveLegend.classList.toggle("hidden", !olivesVisible);
+  }
 }
 
 async function toggleOliveOverlay() {
